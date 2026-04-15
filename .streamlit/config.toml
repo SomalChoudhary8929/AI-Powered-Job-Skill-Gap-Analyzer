@@ -1,0 +1,4 @@
+# Streamlit Cloud Configuration
+
+# Disable Ollama connection attempts
+disabled = true
