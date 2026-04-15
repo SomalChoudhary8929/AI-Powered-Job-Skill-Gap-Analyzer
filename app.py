@@ -1,12 +1,35 @@
 import json
 import os
 import tempfile
+import importlib.util
+from pathlib import Path
 
 import httpx
 import streamlit as st
 from pdfminer.high_level import extract_text
 
-from skills import job_skill_map, skills_list
+
+def load_local_skills_data():
+    skills_path = Path(__file__).with_name("skills.py")
+    spec = importlib.util.spec_from_file_location("local_skills", skills_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Unable to load skills module from {skills_path}")
+
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    loaded_job_skill_map = getattr(module, "job_skill_map", None)
+    loaded_skills_list = getattr(module, "skills_list", None)
+
+    if not isinstance(loaded_job_skill_map, dict):
+        raise TypeError("skills.py must define job_skill_map as a dictionary")
+    if not isinstance(loaded_skills_list, list):
+        raise TypeError("skills.py must define skills_list as a list")
+
+    return loaded_job_skill_map, loaded_skills_list
+
+
+job_skill_map, skills_list = load_local_skills_data()
 
 
 st.set_page_config(page_title="AI Job & Skill Gap Analyzer", page_icon="🎯", layout="wide")
