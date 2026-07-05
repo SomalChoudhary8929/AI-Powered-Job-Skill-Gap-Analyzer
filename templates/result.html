@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analysis Result</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="page page-result">
+    <main class="result-shell">
+        <section class="result-header">
+            <div>
+                <span class="eyebrow">Resume Analysis Complete</span>
+                <h1>Your job-fit dashboard is ready.</h1>
+                <p>Review your skill alignment, role match, and AI-guided interview answer.</p>
+            </div>
+            <a class="secondary-button" href="/">Analyze Another Resume</a>
+        </section>
+
+        <section class="stats-grid">
+            <article class="stat-card">
+                <span>Expected Job</span>
+                <strong>{{ expected_job }}</strong>
+            </article>
+            <article class="stat-card">
+                <span>Best Matched Job</span>
+                <strong>{{ recommended_job }}</strong>
+            </article>
+            <article class="stat-card">
+                <span>Resume Score</span>
+                <strong>{{ score }}/100</strong>
+            </article>
+            <article class="stat-card">
+                <span>Target Match</span>
+                <strong>{{ match_score }}%</strong>
+            </article>
+        </section>
+
+        <section class="content-grid">
+            <article class="glass-card">
+                <div class="card-title-row">
+                    <h2>Skills Found</h2>
+                    <span class="pill">{{ skills|length }} skills</span>
+                </div>
+                <div class="chip-wrap">
+                    {% if skills %}
+                        {% for skill in skills %}
+                            <span class="chip">{{ skill }}</span>
+                        {% endfor %}
+                    {% else %}
+                        <p class="empty-state">No matching skills were detected from the current skill library.</p>
+                    {% endif %}
+                </div>
+            </article>
+
+            <article class="glass-card">
+                <div class="card-title-row">
+                    <h2>Expected Job Comparison</h2>
+                    <span class="pill">{{ expected_job }}</span>
+                </div>
+                <div class="comparison-grid">
+                    <div>
+                        <h3>Matched Skills</h3>
+                        <div class="chip-wrap">
+                            {% if matched_skills %}
+                                {% for skill in matched_skills %}
+                                    <span class="chip chip-success">{{ skill }}</span>
+                                {% endfor %}
+                            {% else %}
+                                <p class="empty-state">No expected-job skills matched yet.</p>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div>
+                        <h3>Missing Skills</h3>
+                        <div class="chip-wrap">
+                            {% if missing_skills %}
+                                {% for skill in missing_skills %}
+                                    <span class="chip chip-warning">{{ skill }}</span>
+                                {% endfor %}
+                            {% else %}
+                                <p class="empty-state">Great job, no major target-skill gaps were found.</p>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </article>
+        </section>
+
+        <section class="content-grid">
+            <article class="glass-card">
+                <div class="card-title-row">
+                    <h2>Free AI Guidance</h2>
+                    <span class="pill {% if llm_enabled %}pill-live{% endif %}">
+                        {% if llm_enabled %}Live LLM{% else %}Fallback Mode{% endif %}
+                    </span>
+                </div>
+                <p class="summary-text">{{ guidance.summary }}</p>
+
+                <div class="guidance-section">
+                    <h3>Strengths</h3>
+                    <ul class="styled-list">
+                        {% for item in guidance.strengths %}
+                            <li>{{ item }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+
+                <div class="guidance-section">
+                    <h3>Skill Gaps</h3>
+                    <ul class="styled-list">
+                        {% for item in guidance.gaps %}
+                            <li>{{ item }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+
+                <div class="guidance-section">
+                    <h3>Next Steps</h3>
+                    <ul class="styled-list">
+                        {% for item in guidance.next_steps %}
+                            <li>{{ item }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </article>
+
+            <article class="glass-card answer-card">
+                <div class="card-title-row">
+                    <h2>Interview-Ready Answer</h2>
+                    <span class="pill">{{ guidance.source }}</span>
+                </div>
+                <blockquote>{{ guidance.interview_answer }}</blockquote>
+            </article>
+        </section>
+    </main>
+</body>
+</html>

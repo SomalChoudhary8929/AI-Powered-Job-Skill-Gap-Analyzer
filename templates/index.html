@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Job & Skill Gap Analyzer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="page page-home">
+    <main class="hero-shell">
+        <section class="hero-copy">
+            <span class="eyebrow">AI-Powered Resume Screening</span>
+            <h1>Turn your resume into a job-fit dashboard.</h1>
+            <p class="hero-text">
+                Upload your PDF resume, choose your expected role, and get a polished report with detected skills,
+                role match percentage, missing skills, and a free LLM-guided answer for the job.
+            </p>
+
+            <div class="feature-grid">
+                <article class="feature-card">
+                    <h3>Smart Role Match</h3>
+                    <p>Compare your resume against a target job and see where you already fit.</p>
+                </article>
+                <article class="feature-card">
+                    <h3>Skill Gap Insights</h3>
+                    <p>Identify missing skills that matter for your expected role.</p>
+                </article>
+                <article class="feature-card">
+                    <h3>Free AI Guidance</h3>
+                    <p>Use a local Ollama model when available for a tailored career response.</p>
+                </article>
+            </div>
+        </section>
+
+        <section class="upload-panel">
+            <div class="panel-header">
+                <h2>Analyze Your Resume</h2>
+                <p>Select your resume and expected job role to generate insights.</p>
+            </div>
+
+            <form action="/analyze" method="post" enctype="multipart/form-data" class="upload-form">
+                <label for="expected_job">Expected Job</label>
+                <select id="expected_job" name="expected_job" required>
+                    {% for job in jobs %}
+                        <option value="{{ job }}">{{ job }}</option>
+                    {% endfor %}
+                </select>
+
+                <label for="resume">Upload PDF Resume</label>
+                <input id="resume" type="file" name="resume" accept=".pdf" required>
+
+                <button type="submit">Analyze Resume</button>
+            </form>
+
+            <p class="panel-note">
+                Free LLM mode uses a local Ollama server if available. If not, the app still shows built-in guidance.
+            </p>
+        </section>
+    </main>
+</body>
+</html>
