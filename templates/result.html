@@ -3,139 +3,296 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Analysis Result</title>
+    <title>Analysis Result — SkillFit AI</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,400&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body class="page page-result">
+
+    <!-- ── Navbar ── -->
+    <nav class="navbar">
+        <div class="nav-inner">
+            <a href="/" class="nav-brand">
+                <span class="nav-logo">🎯</span>
+                <span>SkillFit <span class="nav-brand-ai">AI</span></span>
+            </a>
+            <a class="nav-back-btn" href="/">← Analyze Another</a>
+        </div>
+    </nav>
+
     <main class="result-shell">
-        <section class="result-header">
-            <div>
-                <span class="eyebrow">Resume Analysis Complete</span>
-                <h1>Your job-fit dashboard is ready.</h1>
-                <p>Review your skill alignment, role match, and AI-guided interview answer.</p>
+
+        <!-- ══ HERO BANNER ══ -->
+        <header class="result-banner">
+            <span class="eyebrow">✦ Analysis Complete</span>
+            <h1>Your Resume Report</h1>
+            <p>
+                Showing results for
+                <strong class="highlight-job">{{ expected_job }}</strong>
+                · {{ skills | length }} skill{{ 's' if skills | length != 1 }} detected
+            </p>
+        </header>
+
+        <!-- ══ SCORE ROW ══ -->
+        <section class="score-row">
+
+            <!-- Resume score ring -->
+            <div class="score-ring-card">
+                <div class="score-ring-wrap">
+                    <svg class="score-ring" viewBox="0 0 120 120">
+                        <circle class="ring-bg"   cx="60" cy="60" r="50"/>
+                        <circle class="ring-fill" cx="60" cy="60" r="50" style="--pct: {{ score }}"/>
+                    </svg>
+                    <div class="score-ring-inner">
+                        <span class="score-ring-val">{{ score }}</span>
+                        <span class="score-ring-denom">/100</span>
+                    </div>
+                </div>
+                <div class="score-ring-label">Resume Score</div>
+                <div class="score-tag score-tag-{{ score_label[1] }}">{{ score_label[0] }}</div>
             </div>
-            <a class="secondary-button" href="/">Analyze Another Resume</a>
-        </section>
 
-        <section class="stats-grid">
-            <article class="stat-card">
-                <span>Expected Job</span>
-                <strong>{{ expected_job }}</strong>
-            </article>
-            <article class="stat-card">
-                <span>Best Matched Job</span>
-                <strong>{{ recommended_job }}</strong>
-            </article>
-            <article class="stat-card">
-                <span>Resume Score</span>
-                <strong>{{ score }}/100</strong>
-            </article>
-            <article class="stat-card">
-                <span>Target Match</span>
-                <strong>{{ match_score }}%</strong>
-            </article>
-        </section>
-
-        <section class="content-grid">
-            <article class="glass-card">
-                <div class="card-title-row">
-                    <h2>Skills Found</h2>
-                    <span class="pill">{{ skills|length }} skills</span>
-                </div>
-                <div class="chip-wrap">
-                    {% if skills %}
-                        {% for skill in skills %}
-                            <span class="chip">{{ skill }}</span>
-                        {% endfor %}
-                    {% else %}
-                        <p class="empty-state">No matching skills were detected from the current skill library.</p>
-                    {% endif %}
-                </div>
-            </article>
-
-            <article class="glass-card">
-                <div class="card-title-row">
-                    <h2>Expected Job Comparison</h2>
-                    <span class="pill">{{ expected_job }}</span>
-                </div>
-                <div class="comparison-grid">
-                    <div>
-                        <h3>Matched Skills</h3>
-                        <div class="chip-wrap">
-                            {% if matched_skills %}
-                                {% for skill in matched_skills %}
-                                    <span class="chip chip-success">{{ skill }}</span>
-                                {% endfor %}
-                            {% else %}
-                                <p class="empty-state">No expected-job skills matched yet.</p>
-                            {% endif %}
-                        </div>
-                    </div>
-                    <div>
-                        <h3>Missing Skills</h3>
-                        <div class="chip-wrap">
-                            {% if missing_skills %}
-                                {% for skill in missing_skills %}
-                                    <span class="chip chip-warning">{{ skill }}</span>
-                                {% endfor %}
-                            {% else %}
-                                <p class="empty-state">Great job, no major target-skill gaps were found.</p>
-                            {% endif %}
-                        </div>
+            <!-- Match score ring -->
+            <div class="score-ring-card">
+                <div class="score-ring-wrap">
+                    <svg class="score-ring score-ring-match" viewBox="0 0 120 120">
+                        <circle class="ring-bg"   cx="60" cy="60" r="50"/>
+                        <circle class="ring-fill" cx="60" cy="60" r="50" style="--pct: {{ match_score }}"/>
+                    </svg>
+                    <div class="score-ring-inner">
+                        <span class="score-ring-val">{{ match_score }}</span>
+                        <span class="score-ring-denom">%</span>
                     </div>
                 </div>
-            </article>
-        </section>
+                <div class="score-ring-label">Role Match</div>
+                <div class="score-tag score-tag-{{ match_label[1] }}">{{ match_label[0] }}</div>
+            </div>
 
-        <section class="content-grid">
-            <article class="glass-card">
-                <div class="card-title-row">
-                    <h2>Free AI Guidance</h2>
-                    <span class="pill {% if llm_enabled %}pill-live{% endif %}">
-                        {% if llm_enabled %}Live LLM{% else %}Fallback Mode{% endif %}
+            <!-- Role cards -->
+            <div class="role-cards">
+                <div class="role-card">
+                    <span class="role-card-label">Target Role</span>
+                    <span class="role-card-value">{{ expected_job }}</span>
+                </div>
+                <div class="role-card role-card-alt">
+                    <span class="role-card-label">Best System Match</span>
+                    <span class="role-card-value">{{ recommended_job }}</span>
+                </div>
+            </div>
+
+            <!-- Match progress bar -->
+            <div class="match-bar-card">
+                <div class="match-bar-header">
+                    <span>Skill Coverage</span>
+                    <span class="match-bar-pct">
+                        {{ matched_skills | length }} / {{ (matched_skills | length) + (missing_skills | length) }} required skills
                     </span>
                 </div>
+                <div class="match-bar-track">
+                    <div class="match-bar-fill {{ match_label[1] }}" style="width: {{ match_score }}%"></div>
+                </div>
+                <div class="match-bar-labels">
+                    <span>{{ matched_skills | length }} matched</span>
+                    <span>{{ missing_skills | length }} missing</span>
+                </div>
+            </div>
+
+        </section>
+
+        <!-- ══ SKILLS + GAP ══ -->
+        <section class="content-grid two-col">
+
+            <article class="glass-card">
+                <div class="card-title-row">
+                    <h2>🧩 Detected Skills</h2>
+                    <span class="pill">{{ skills | length }} found</span>
+                </div>
+                {% if skills %}
+                    <div class="chip-wrap">
+                        {% for skill in skills %}
+                            <span class="chip chip-blue">{{ skill }}</span>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <p class="empty-msg">No recognizable skills found. Try a more detailed resume.</p>
+                {% endif %}
+            </article>
+
+            <article class="glass-card">
+                <div class="card-title-row">
+                    <h2>🎯 Gap Analysis</h2>
+                    <span class="pill">vs {{ expected_job }}</span>
+                </div>
+                <div class="gap-grid">
+                    <div class="gap-col">
+                        <div class="gap-col-header gap-col-header-green">
+                            ✅ You Have
+                            <span class="gap-count">{{ matched_skills | length }}</span>
+                        </div>
+                        {% if matched_skills %}
+                            <div class="chip-wrap">
+                                {% for skill in matched_skills %}
+                                    <span class="chip chip-green">{{ skill }}</span>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            <p class="empty-msg">No required skills matched yet.</p>
+                        {% endif %}
+                    </div>
+                    <div class="gap-col">
+                        <div class="gap-col-header gap-col-header-red">
+                            ❌ Still Needed
+                            <span class="gap-count">{{ missing_skills | length }}</span>
+                        </div>
+                        {% if missing_skills %}
+                            <div class="chip-wrap">
+                                {% for skill in missing_skills %}
+                                    <span class="chip chip-red">{{ skill }}</span>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            <p class="empty-msg">✓ You cover all required skills — great fit!</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </article>
+
+        </section>
+
+        <!-- ══ AI GUIDANCE ══ -->
+        <section class="content-grid two-col">
+
+            <!-- Summary + Strengths + Gaps -->
+            <article class="glass-card">
+                <div class="card-title-row">
+                    <h2>🤖 AI Career Assessment</h2>
+                    {% if llm_enabled %}
+                        <span class="badge badge-live">● Live AI</span>
+                    {% else %}
+                        <span class="badge badge-fallback">● Fallback</span>
+                    {% endif %}
+                </div>
+
                 <p class="summary-text">{{ guidance.summary }}</p>
 
-                <div class="guidance-section">
-                    <h3>Strengths</h3>
-                    <ul class="styled-list">
+                <div class="guidance-block">
+                    <h3 class="guidance-heading guidance-heading-green">💪 Your Strengths</h3>
+                    <ul class="guidance-list">
                         {% for item in guidance.strengths %}
-                            <li>{{ item }}</li>
+                            <li class="guidance-item guidance-item-green">{{ item }}</li>
                         {% endfor %}
                     </ul>
                 </div>
 
-                <div class="guidance-section">
-                    <h3>Skill Gaps</h3>
-                    <ul class="styled-list">
+                <div class="guidance-block">
+                    <h3 class="guidance-heading guidance-heading-red">📉 Gaps to Address</h3>
+                    <ul class="guidance-list">
                         {% for item in guidance.gaps %}
-                            <li>{{ item }}</li>
-                        {% endfor %}
-                    </ul>
-                </div>
-
-                <div class="guidance-section">
-                    <h3>Next Steps</h3>
-                    <ul class="styled-list">
-                        {% for item in guidance.next_steps %}
-                            <li>{{ item }}</li>
+                            <li class="guidance-item guidance-item-red">{{ item }}</li>
                         {% endfor %}
                     </ul>
                 </div>
             </article>
 
-            <article class="glass-card answer-card">
-                <div class="card-title-row">
-                    <h2>Interview-Ready Answer</h2>
-                    <span class="pill">{{ guidance.source }}</span>
-                </div>
-                <blockquote>{{ guidance.interview_answer }}</blockquote>
-            </article>
+            <!-- Action Plan + Interview Answer -->
+            <div class="right-col">
+
+                <!-- Action Plan with Free / Paid tabs -->
+                <article class="glass-card">
+                    <div class="card-title-row">
+                        <h2>🚀 Action Plan</h2>
+                        <div class="plan-tabs">
+                            <button class="plan-tab plan-tab-free active" onclick="switchTab(this,'free')">
+                                🆓 Free
+                            </button>
+                            <button class="plan-tab plan-tab-paid" onclick="switchTab(this,'paid')">
+                                💳 Paid
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Free steps -->
+                    <div class="plan-panel plan-panel-free" id="panel-free">
+                        <p class="plan-panel-note plan-panel-note-free">
+                            Zero cost. Start today with these resources.
+                        </p>
+                        <ol class="timeline">
+                            {% for step in guidance.free_steps %}
+                            <li class="timeline-item">
+                                <div class="timeline-dot timeline-dot-free">{{ loop.index }}</div>
+                                <div class="timeline-body">{{ step }}</div>
+                            </li>
+                            {% endfor %}
+                        </ol>
+                    </div>
+
+                    <!-- Paid steps -->
+                    <div class="plan-panel plan-panel-paid hidden" id="panel-paid">
+                        <p class="plan-panel-note plan-panel-note-paid">
+                            Paid options that deliver the fastest results.
+                        </p>
+                        <ol class="timeline">
+                            {% for step in guidance.paid_steps %}
+                            <li class="timeline-item">
+                                <div class="timeline-dot timeline-dot-paid">{{ loop.index }}</div>
+                                <div class="timeline-body">{{ step }}</div>
+                            </li>
+                            {% endfor %}
+                        </ol>
+                    </div>
+                </article>
+
+                <!-- Interview answer -->
+                <article class="glass-card interview-card">
+                    <div class="card-title-row">
+                        <h2>🎙️ Interview Answer</h2>
+                        <span class="pill">Why are you a good fit?</span>
+                    </div>
+                    <blockquote class="interview-quote">
+                        "{{ guidance.interview_answer }}"
+                    </blockquote>
+                    <p class="interview-hint">
+                        Use this as a starting point — adapt it to your own voice before the interview.
+                    </p>
+                </article>
+
+            </div>
+
         </section>
+
+        <!-- ══ FOOTER ══ -->
+        <footer class="result-footer">
+            <a class="secondary-button" href="/">← Analyze Another Resume</a>
+            <span class="footer-note">Source: {{ guidance.source }}</span>
+        </footer>
+
     </main>
+
+    <script>
+        // Animate score rings on load
+        document.addEventListener('DOMContentLoaded', () => {
+            document.querySelectorAll('.ring-fill').forEach(el => {
+                const pct = parseFloat(getComputedStyle(el).getPropertyValue('--pct')) || 0;
+                const circumference = 2 * Math.PI * 50;
+                const offset = circumference * (1 - pct / 100);
+                el.style.strokeDasharray  = circumference;
+                el.style.strokeDashoffset = circumference;
+                requestAnimationFrame(() => {
+                    el.style.transition = 'stroke-dashoffset 1.2s cubic-bezier(0.4,0,0.2,1)';
+                    el.style.strokeDashoffset = offset;
+                });
+            });
+        });
+
+        // Switch between Free / Paid action plan tabs
+        function switchTab(btn, type) {
+            document.querySelectorAll('.plan-tab').forEach(t => t.classList.remove('active'));
+            btn.classList.add('active');
+            document.querySelectorAll('.plan-panel').forEach(p => p.classList.add('hidden'));
+            document.getElementById('panel-' + type).classList.remove('hidden');
+        }
+    </script>
 </body>
 </html>

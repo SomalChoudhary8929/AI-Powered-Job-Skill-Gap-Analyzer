@@ -3,62 +3,162 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Job & Skill Gap Analyzer</title>
+    <title>SkillFit AI — Job & Skill Gap Analyzer</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,400&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body class="page page-home">
+
+    <!-- ── Navbar ── -->
+    <nav class="navbar">
+        <div class="nav-inner">
+            <a href="/" class="nav-brand">
+                <span class="nav-logo">🎯</span>
+                <span>SkillFit <span class="nav-brand-ai">AI</span></span>
+            </a>
+            <div class="nav-links">
+                <span class="nav-tag">Powered by LLaMA 3.3 · Groq</span>
+            </div>
+        </div>
+    </nav>
+
+    <!-- ── Loading overlay ── -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-box">
+            <div class="spinner"></div>
+            <p class="loading-title">Analyzing your resume…</p>
+            <p class="loading-sub">Extracting skills, scoring your fit, and generating AI guidance.</p>
+        </div>
+    </div>
+
     <main class="hero-shell">
+
+        <!-- ── Left: hero copy ── -->
         <section class="hero-copy">
-            <span class="eyebrow">AI-Powered Resume Screening</span>
-            <h1>Turn your resume into a job-fit dashboard.</h1>
+            <span class="eyebrow">✦ AI-Powered Resume Screening</span>
+            <h1>Know exactly where you stand before you apply.</h1>
             <p class="hero-text">
-                Upload your PDF resume, choose your expected role, and get a polished report with detected skills,
-                role match percentage, missing skills, and a free LLM-guided answer for the job.
+                Upload your PDF resume, pick your target role, and get a full skill gap report —
+                with matched skills, missing skills, a resume score, and personalized AI career advice.
             </p>
 
             <div class="feature-grid">
                 <article class="feature-card">
-                    <h3>Smart Role Match</h3>
-                    <p>Compare your resume against a target job and see where you already fit.</p>
+                    <span class="feature-icon">🎯</span>
+                    <div>
+                        <h3>Role Match Score</h3>
+                        <p>See what percentage of your target role's required skills your resume already covers.</p>
+                    </div>
                 </article>
                 <article class="feature-card">
-                    <h3>Skill Gap Insights</h3>
-                    <p>Identify missing skills that matter for your expected role.</p>
+                    <span class="feature-icon">🔍</span>
+                    <div>
+                        <h3>Skill Gap Report</h3>
+                        <p>Get a clear breakdown of matched and missing skills compared to job requirements.</p>
+                    </div>
                 </article>
                 <article class="feature-card">
-                    <h3>Free AI Guidance</h3>
-                    <p>Use a local Ollama model when available for a tailored career response.</p>
+                    <span class="feature-icon">🤖</span>
+                    <div>
+                        <h3>AI Career Coach</h3>
+                        <p>Receive specific, actionable guidance and an interview-ready answer — not generic advice.</p>
+                    </div>
                 </article>
+            </div>
+
+            <div class="trust-row">
+                <span class="trust-item">🔒 Resume never stored</span>
+                <span class="trust-item">⚡ Results in seconds</span>
+                <span class="trust-item">🧠 LLaMA 3.3 · 70B</span>
+                <span class="trust-item">💼 28 Job Roles</span>
             </div>
         </section>
 
+        <!-- ── Right: upload panel ── -->
         <section class="upload-panel">
             <div class="panel-header">
                 <h2>Analyze Your Resume</h2>
-                <p>Select your resume and expected job role to generate insights.</p>
+                <p>Two steps. Instant results.</p>
             </div>
 
-            <form action="/analyze" method="post" enctype="multipart/form-data" class="upload-form">
-                <label for="expected_job">Expected Job</label>
-                <select id="expected_job" name="expected_job" required>
-                    {% for job in jobs %}
-                        <option value="{{ job }}">{{ job }}</option>
-                    {% endfor %}
-                </select>
+            {% if error %}
+            <div class="form-error" role="alert">
+                <span>⚠</span> {{ error }}
+            </div>
+            {% endif %}
 
-                <label for="resume">Upload PDF Resume</label>
-                <input id="resume" type="file" name="resume" accept=".pdf" required>
+            <form action="/analyze" method="post" enctype="multipart/form-data"
+                  class="upload-form" id="analyzeForm">
 
-                <button type="submit">Analyze Resume</button>
+                <!-- Step 1: Job role -->
+                <div class="form-group">
+                    <label for="expected_job">
+                        <span class="step-num">1</span>
+                        Target Job Role
+                    </label>
+                    <div class="select-wrap">
+                        <select id="expected_job" name="expected_job" required>
+                            {% for job in jobs %}
+                                <option value="{{ job }}">{{ job }}</option>
+                            {% endfor %}
+                        </select>
+                        <span class="select-arrow">▾</span>
+                    </div>
+                </div>
+
+                <!-- Step 2: Resume upload -->
+                <div class="form-group">
+                    <label for="resume">
+                        <span class="step-num">2</span>
+                        Upload Your Resume
+                    </label>
+                    <label class="file-drop" for="resume" id="fileDrop">
+                        <span class="file-drop-icon">📄</span>
+                        <span class="file-drop-text" id="fileDropText">Click to choose a PDF file</span>
+                        <span class="file-drop-hint">PDF files only · Max 16 MB</span>
+                        <input id="resume" type="file" name="resume"
+                               accept=".pdf" required class="file-input">
+                    </label>
+                </div>
+
+                <button type="submit" class="submit-btn" id="submitBtn">
+                    <span class="btn-text">Analyze Resume</span>
+                    <span class="btn-arrow">→</span>
+                </button>
             </form>
 
-            <p class="panel-note">
-                Free LLM mode uses a local Ollama server if available. If not, the app still shows built-in guidance.
-            </p>
+            <p class="panel-note">🔒 Your file is processed in memory and never saved to disk.</p>
         </section>
+
     </main>
+
+    <script>
+        // File drop label update
+        const fileInput    = document.getElementById('resume');
+        const fileDropText = document.getElementById('fileDropText');
+        const fileDrop     = document.getElementById('fileDrop');
+
+        fileInput.addEventListener('change', () => {
+            if (fileInput.files.length > 0) {
+                fileDropText.textContent = '✓ ' + fileInput.files[0].name;
+                fileDrop.classList.add('file-selected');
+            }
+        });
+
+        // Loading overlay on submit
+        const form      = document.getElementById('analyzeForm');
+        const overlay   = document.getElementById('loadingOverlay');
+        const submitBtn = document.getElementById('submitBtn');
+
+        form.addEventListener('submit', () => {
+            if (form.checkValidity()) {
+                overlay.classList.add('active');
+                submitBtn.disabled = true;
+                submitBtn.querySelector('.btn-text').textContent = 'Analyzing…';
+            }
+        });
+    </script>
 </body>
 </html>

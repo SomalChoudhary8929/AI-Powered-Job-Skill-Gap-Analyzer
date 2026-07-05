@@ -1,491 +1,355 @@
 import json
+import math
 import os
 import tempfile
 import importlib.util
 from pathlib import Path
 
-import httpx
-import streamlit as st
-from pdfminer.high_level import extract_text
+from flask import Flask, render_template, request, redirect, url_for
 
+try:
+    from pdfminer.high_level import extract_text
+except ImportError:
+    extract_text = None
+
+from config import chat_model
+from langchain_core.messages import HumanMessage
+
+
+# ══════════════════════════════════════════════════════════════════
+# SKILLS DATA
+# ══════════════════════════════════════════════════════════════════
 
 def load_local_skills_data():
     skills_path = Path(__file__).with_name("skills.py")
     spec = importlib.util.spec_from_file_location("local_skills", skills_path)
     if spec is None or spec.loader is None:
         raise ImportError(f"Unable to load skills module from {skills_path}")
-
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-
     loaded_job_skill_map = getattr(module, "job_skill_map", None)
-    loaded_skills_list = getattr(module, "skills_list", None)
-
+    loaded_skills_list   = getattr(module, "skills_list", None)
     if not isinstance(loaded_job_skill_map, dict):
-        raise TypeError("skills.py must define job_skill_map as a dictionary")
+        raise TypeError("skills.py must define job_skill_map as a dict")
     if not isinstance(loaded_skills_list, list):
         raise TypeError("skills.py must define skills_list as a list")
-
     return loaded_job_skill_map, loaded_skills_list
 
 
 job_skill_map, skills_list = load_local_skills_data()
 
 
-st.set_page_config(page_title="AI Job & Skill Gap Analyzer", page_icon="🎯", layout="wide")
+# ══════════════════════════════════════════════════════════════════
+# ANALYSIS HELPERS
+# ══════════════════════════════════════════════════════════════════
 
-# Custom CSS for UI elements
-st.markdown("""
-<style>
-/* Main Gradient Title */
-.gradient-title {
-    background: linear-gradient(135deg, #ff7e5f, #feb47b, #ff7e5f);
-    background-size: 200% auto;
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    font-size: 3.5rem;
-    font-weight: 900;
-    text-align: center;
-    margin-bottom: 10px;
-    animation: gradientShift 5s ease infinite;
-}
-
-@keyframes gradientShift {
-    0% { background-position: 0% 50%; }
-    50% { background-position: 100% 50%; }
-    100% { background-position: 0% 50%; }
-}
-
-/* Colorful Metric Cards */
-.colorful-card {
-    border-radius: 20px;
-    padding: 25px 20px;
-    color: white;
-    text-align: center;
-    box-shadow: 0 10px 20px rgba(0,0,0,0.15);
-    margin-bottom: 25px;
-    transition: transform 0.3s ease, box-shadow 0.3s ease;
-}
-.colorful-card:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 15px 30px rgba(0,0,0,0.25);
-}
-.card-score { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
-.card-match { background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); }
-.card-job { background: linear-gradient(135deg, #fc4a1a 0%, #f7b733 100%); }
-
-.card-value { font-size: 2.8rem; font-weight: 800; margin: 15px 0; text-shadow: 2px 2px 4px rgba(0,0,0,0.2); }
-.card-label { font-size: 1.1rem; text-transform: uppercase; letter-spacing: 1.5px; opacity: 0.9; font-weight: 600; }
-
-/* Subtitle */
-.subtitle-text {
-    text-align: center;
-    font-size: 1.2rem;
-    color: #64748b;
-    margin-bottom: 40px;
-    max-width: 800px;
-    margin-left: auto;
-    margin-right: auto;
-}
-
-/* Skill Chips */
-.skill-chip {
-    display: inline-block;
-    padding: 8px 16px;
-    margin: 6px;
-    border-radius: 25px;
-    font-size: 15px;
-    font-weight: 600;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-    transition: transform 0.2s;
-}
-.skill-chip:hover {
-    transform: scale(1.05);
-}
-@media (prefers-color-scheme: dark) {
-    .chip-blue { background: linear-gradient(135deg, #3b82f6, #0ea5e9); color: white; border: none; }
-    .chip-green { background: linear-gradient(135deg, #10b981, #34d399); color: white; border: none; }
-    .chip-red { background: linear-gradient(135deg, #ef4444, #f87171); color: white; border: none; }
-    .chip-gray { background: linear-gradient(135deg, #64748b, #94a3b8); color: white; border: none; }
-}
-@media (prefers-color-scheme: light) {
-    .chip-blue { background: linear-gradient(135deg, #60a5fa, #38bdf8); color: white; border: none; }
-    .chip-green { background: linear-gradient(135deg, #34d399, #6ee7b7); color: white; border: none; }
-    .chip-red { background: linear-gradient(135deg, #f87171, #fca5a5); color: white; border: none; }
-    .chip-gray { background: linear-gradient(135deg, #94a3b8, #cbd5e1); color: white; border: none; }
-}
-
-/* Empty State Box */
-.empty-state-box {
-    text-align: center;
-    padding: 60px 30px;
-    background: linear-gradient(135deg, rgba(255, 126, 95, 0.05) 0%, rgba(254, 180, 123, 0.05) 100%);
-    border: 3px dashed #ffb47b;
-    border-radius: 25px;
-    margin-top: 40px;
-    animation: pulseBorder 2s infinite;
-}
-@keyframes pulseBorder {
-    0% { border-color: rgba(255, 180, 123, 0.5); }
-    50% { border-color: rgba(255, 126, 95, 1); }
-    100% { border-color: rgba(255, 180, 123, 0.5); }
-}
-.empty-icon { font-size: 5rem; margin-bottom: 20px; }
-.empty-title { font-size: 1.8rem; font-weight: 700; color: #ff7e5f; margin-bottom: 10px; }
-.empty-desc { font-size: 1.1rem; color: #64748b; }
-
-</style>
-""", unsafe_allow_html=True)
-
-def render_chips(skills, chip_class="chip-gray"):
-    if not skills:
-        return "<p style='color: gray; font-style: italic;'>None detected</p>"
-    chips_html = "".join([f"<span class='skill-chip {chip_class}'>{skill}</span>" for skill in skills])
-    return f"<div>{chips_html}</div>"
-
-
-def check_ollama_status():
-    ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
-    ollama_model = os.getenv("OLLAMA_MODEL", "tinyllama:latest")
-
-    try:
-        response = httpx.get(f"{ollama_base_url}/api/tags", timeout=5.0)
-        response.raise_for_status()
-        models = response.json().get("models", [])
-        model_names = {model.get("name", "") for model in models}
-        return {
-            "available": ollama_model in model_names,
-            "base_url": ollama_base_url,
-            "model": ollama_model,
-            "models": sorted(model_names),
-            "error": None if ollama_model in model_names else f"Model '{ollama_model}' is not installed.",
-        }
-    except Exception as exc:
-        return {
-            "available": False,
-            "base_url": ollama_base_url,
-            "model": ollama_model,
-            "models": [],
-            "error": str(exc),
-        }
-
-
-def extract_resume_text(file_path):
+def extract_resume_text(file_path: str) -> str:
+    if extract_text is None:
+        raise RuntimeError("Install pdfminer.six: pip install pdfminer.six")
     return extract_text(file_path)
 
 
-def extract_skills(text):
-    text = text.lower()
-    found_skills = []
-    for skill in skills_list:
-        if skill in text:
-            found_skills.append(skill)
-    return sorted(set(found_skills))
+def extract_skills(text: str) -> list[str]:
+    text_lower = text.lower()
+    return sorted({s for s in skills_list if s in text_lower})
 
 
-def calculate_resume_score(skills):
-    return min(len(skills) * 12, 100)
+def calculate_resume_score(skills: list[str], expected_job: str = "") -> int:
+    """
+    Weighted resume score out of 100.
+
+    Components:
+      - Relevance (50 pts): % of target role's required skills present — heaviest factor.
+      - Breadth   (30 pts): total distinct skills on resume (log scale).
+      - Depth     (20 pts): bonus for well-rounded skill count (log scale).
+
+    Clamped to [10, 98] — no one scores 0 or a perfect 100.
+    """
+    total = len(skills)
+    if total == 0:
+        return 10
+
+    breadth = min(30, round(30 * math.log1p(total) / math.log1p(30)))
+
+    target = job_skill_map.get(expected_job, [])
+    if target:
+        matched_count = len(set(skills) & set(target))
+        relevance = round(50 * matched_count / len(target))
+    else:
+        relevance = min(35, round(total * 2.5))
+
+    depth = min(20, round(20 * math.log1p(total) / math.log1p(20)))
+
+    return max(10, min(98, breadth + relevance + depth))
 
 
-def recommend_job(skills):
-    best_job = "Software Developer"
-    best_score = -1
-
-    for job_name, target_skills in job_skill_map.items():
-        overlap = len(set(skills) & set(target_skills))
+def recommend_job(skills: list[str]) -> str:
+    best_job, best_score = "Software Developer", -1
+    for job_name, target in job_skill_map.items():
+        overlap = len(set(skills) & set(target))
         if overlap > best_score:
-            best_score = overlap
-            best_job = job_name
-
+            best_score, best_job = overlap, job_name
     return best_job
 
 
-def analyze_expected_job(skills, expected_job):
-    # Use existing map if available, otherwise just return empty target skills for the LLM to figure out
+def analyze_expected_job(skills: list[str], expected_job: str) -> dict:
     target_skills = job_skill_map.get(expected_job, [])
-    
     if target_skills:
-        matched_skills = sorted(set(skills) & set(target_skills))
-        missing_skills = sorted(set(target_skills) - set(skills))
-        match_score = int((len(matched_skills) / len(target_skills)) * 100)
+        matched     = sorted(set(skills) & set(target_skills))
+        missing     = sorted(set(target_skills) - set(skills))
+        match_score = int(len(matched) / len(target_skills) * 100)
     else:
-        matched_skills = []
-        missing_skills = []
-        match_score = 0 # Will be overridden by LLM if possible
-
+        matched, missing, match_score = [], [], 0
     return {
-        "target_skills": target_skills,
-        "matched_skills": matched_skills,
-        "missing_skills": missing_skills,
-        "match_score": match_score,
+        "target_skills":  target_skills,
+        "matched_skills": matched,
+        "missing_skills": missing,
+        "match_score":    match_score,
     }
 
 
-def build_fallback_guidance(expected_job, recommended_job, gap_analysis):
-    matched = ", ".join(gap_analysis["matched_skills"][:6]) or "No strong role-specific matches yet"
-    missing = ", ".join(gap_analysis["missing_skills"][:6]) or "No major gaps detected"
-    
-    # Handle case where user entered custom job without Ollama active
-    if not gap_analysis["target_skills"]:
-        missing = f"Please enable LLM to get specific missing skills for {expected_job}."
+# ══════════════════════════════════════════════════════════════════
+# FALLBACK GUIDANCE
+# ══════════════════════════════════════════════════════════════════
 
+def build_fallback_guidance(expected_job: str, recommended_job: str, gap: dict) -> dict:
+    matched = ", ".join(gap["matched_skills"][:6]) or "No strong role-specific matches yet"
+    missing = ", ".join(gap["missing_skills"][:6]) or "No major gaps detected"
     return {
         "summary": (
             f"Your resume is currently closest to {recommended_job}. "
-            f"For {expected_job}, your present match is {gap_analysis['match_score']}%."
+            f"For {expected_job}, your present match is {gap['match_score']}%."
         ),
         "strengths": [
             f"Relevant strengths identified: {matched}.",
-            "Your resume already includes skills that can be positioned for interviews and applications.",
+            "Your resume already includes skills that can be positioned for interviews.",
         ],
         "gaps": [
             f"Important skills to strengthen for {expected_job}: {missing}.",
-            "Adding these skills through projects, certifications, or portfolio work will improve your fit.",
+            "Adding these through projects or certifications will improve your fit.",
         ],
-        "next_steps": [
-            f"Tailor your resume headline and project section toward {expected_job}.",
-            "Highlight measurable outcomes, tools used, and real projects with business impact.",
-            "Prepare role-specific interview answers around your strongest matching skills.",
+        "free_steps": [
+            f"Search YouTube and freeCodeCamp for tutorials on the missing skills: {missing}.",
+            "Build a small personal project using your existing skills and push it to GitHub.",
+            f"Read the official documentation for tools relevant to {expected_job}.",
+            "Practice mock interviews using free platforms like Pramp or interviewing.io.",
+        ],
+        "paid_steps": [
+            f"Enroll in a structured {expected_job} course on Udemy or Coursera (₹500–₹4,000).",
+            "Get a role-relevant certification (e.g. AWS, Google, Meta) to signal credibility.",
+            "Join a mentorship platform like MentorCruise or Topmate for 1-on-1 guidance.",
+            "Use LinkedIn Premium for 1 month to access job insights and recruiter outreach.",
         ],
         "interview_answer": (
-            f"I am interested in the {expected_job} role because it aligns with my current skill set and the kind of problems I enjoy solving. "
-            f"My background already reflects experience in {matched.lower()}, and I am actively improving the remaining skills needed for this role. "
-            f"I can contribute quickly, learn fast, and bring practical project-based experience to the team."
+            f"I am interested in the {expected_job} role because it aligns with my current "
+            f"skill set. My background reflects experience in {matched.lower()}, and I am "
+            f"actively improving the remaining skills needed for this role."
         ),
         "source": "Built-in guidance",
     }
 
 
-def request_free_llm_guidance(expected_job, recommended_job, skills, gap_analysis):
-    ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
-    ollama_url = os.getenv("OLLAMA_URL", f"{ollama_base_url}/api/generate")
-    ollama_model = os.getenv("OLLAMA_MODEL", "tinyllama:latest")
+# ══════════════════════════════════════════════════════════════════
+# AI GUIDANCE — LANGCHAIN + GROQ
+# ══════════════════════════════════════════════════════════════════
 
-    prompt = f"""
-You are a career guidance assistant for a resume analyzer web app.
-The user wants to apply for the role: "{expected_job}".
-Their current skills extracted from the resume are: {", ".join(skills) or "None"}.
-Their closest matching standard role is: "{recommended_job}".
+def request_ai_guidance(
+    expected_job: str,
+    recommended_job: str,
+    skills: list[str],
+    gap: dict,
+) -> tuple[dict, bool]:
+    match_pct   = gap["match_score"]
+    matched_str = ", ".join(gap["matched_skills"]) or "none"
+    missing_str = ", ".join(gap["missing_skills"]) or "none"
+    all_skills  = ", ".join(skills) or "none listed"
 
-Return ONLY valid JSON with these keys:
-- "summary": a short string explaining their fit.
-- "strengths": array of 2 to 4 short strings highlighting their best matching areas.
-- "gaps": array of 2 to 4 short strings explaining what they should learn next.
-- "next_steps": array of 2 to 4 short strings of actionable career advice.
-- "interview_answer": a short first-person answer to "Why are you fit for this job?"
-- "source": must be exactly "Ollama ({ollama_model})".
+    prompt = f"""You are an experienced career coach reviewing a candidate's resume for a specific job role.
 
-Do not include any extra text outside the JSON.
-Use these computed facts exactly:
-- matched skills: {", ".join(gap_analysis["matched_skills"]) or "None"}
-- missing skills: {", ".join(gap_analysis["missing_skills"]) or "None"}
-- match score: {gap_analysis["match_score"]}%
-"""
+CANDIDATE PROFILE
+-----------------
+Target role      : {expected_job}
+Best system match: {recommended_job}
+Skills detected  : {all_skills}
+Role match score : {match_pct}%
+Skills matched   : {matched_str}
+Skills missing   : {missing_str}
+
+YOUR TASK
+---------
+Write honest, specific, human-sounding career guidance. Do NOT use generic filler phrases like
+"leverage your skills" or "passionate professional". Be direct, practical, and encouraging.
+
+Return ONLY a valid JSON object with these exact keys — no extra text, no markdown fences:
+
+{{
+  "summary": "2-3 sentence honest assessment of how well this candidate fits the {expected_job} role based on their actual skills. Mention the match score naturally.",
+  "strengths": [
+    "Specific strength 1 tied to an actual skill they have (name the skill)",
+    "Specific strength 2 tied to an actual skill or combination of skills",
+    "Specific strength 3 if applicable"
+  ],
+  "gaps": [
+    "Specific gap 1 — name the missing skill and briefly explain why it matters for {expected_job}",
+    "Specific gap 2 — name the missing skill and suggest a concrete way to fill it",
+    "Specific gap 3 if applicable"
+  ],
+  "free_steps": [
+    "Free action step 1 — a specific free resource, platform, or activity (e.g. YouTube channel, official docs, GitHub project, freeCodeCamp, Kaggle). Name the resource explicitly.",
+    "Free action step 2 — another free option relevant to the missing skills for {expected_job}",
+    "Free action step 3 — a free community, practice platform, or portfolio tip (e.g. Pramp, LeetCode, dev.to)",
+    "Free action step 4 — a free resume or profile improvement action (e.g. update LinkedIn, add GitHub README)"
+  ],
+  "paid_steps": [
+    "Paid option 1 — name a specific course on Udemy / Coursera / Pluralsight with approximate price and why it is worth it for {expected_job}",
+    "Paid option 2 — a professional certification relevant to {expected_job} (name the cert, exam cost, and value)",
+    "Paid option 3 — a mentorship, bootcamp, or coaching service that would accelerate growth",
+    "Paid option 4 — a tool subscription or platform (e.g. LinkedIn Premium, DataCamp) that gives a measurable edge"
+  ],
+  "interview_answer": "A natural, confident 4-6 sentence first-person answer to 'Why are you a good fit for this {expected_job} role?' that references their actual matched skills without sounding rehearsed."
+}}"""
 
     try:
-        response = httpx.post(
-            ollama_url,
-            json={
-                "model": ollama_model,
-                "prompt": prompt.strip(),
-                "stream": False,
-                "format": "json",
-            },
-            timeout=30.0,
-        )
-        response.raise_for_status()
-        payload = response.json()
-        llm_output_text = payload.get("response", "{}").strip()
-        
-        # Clean up markdown code blocks if the LLM adds them
-        if llm_output_text.startswith("```json"):
-            llm_output_text = llm_output_text[7:]
-        elif llm_output_text.startswith("```"):
-            llm_output_text = llm_output_text[3:]
-        if llm_output_text.endswith("```"):
-            llm_output_text = llm_output_text[:-3]
-            
-        llm_output = json.loads(llm_output_text.strip())
+        response = chat_model.invoke([HumanMessage(content=prompt)])
+        raw = response.content.strip()
 
-        fallback = build_fallback_guidance(expected_job, recommended_job, gap_analysis)
-        required_keys = {"summary", "strengths", "gaps", "next_steps", "interview_answer"}
+        if raw.startswith("```"):
+            parts = raw.split("```")
+            raw = parts[1] if len(parts) > 1 else raw
+            if raw.startswith("json"):
+                raw = raw[4:]
 
-        if not required_keys.issubset(llm_output):
-            raise ValueError("Incomplete LLM guidance response")
+        llm_output = json.loads(raw.strip())
 
-        fallback.update({
-            "summary": llm_output["summary"],
-            "strengths": llm_output["strengths"],
-            "gaps": llm_output["gaps"],
-            "next_steps": llm_output["next_steps"],
+        required = {"summary", "strengths", "gaps", "free_steps", "paid_steps", "interview_answer"}
+        if not required.issubset(llm_output):
+            raise ValueError("Incomplete response from LLM")
+
+        guidance = build_fallback_guidance(expected_job, recommended_job, gap)
+        guidance.update({
+            "summary":          llm_output["summary"],
+            "strengths":        llm_output["strengths"],
+            "gaps":             llm_output["gaps"],
+            "free_steps":       llm_output["free_steps"],
+            "paid_steps":       llm_output["paid_steps"],
             "interview_answer": llm_output["interview_answer"],
-            "source": f"Ollama ({ollama_model})",
+            "source":           "AI Guidance",
         })
+        return guidance, True
 
-        return fallback, True, gap_analysis
-    except Exception as e:
-        fallback = build_fallback_guidance(expected_job, recommended_job, gap_analysis)
-        fallback["source"] = f"Built-in guidance ({type(e).__name__})"
-        fallback["error"] = str(e)
-        return fallback, False, gap_analysis
+    except Exception as exc:
+        import traceback
+        traceback.print_exc()
+        fallback = build_fallback_guidance(expected_job, recommended_job, gap)
+        fallback["source"] = f"Built-in guidance ({type(exc).__name__})"
+        return fallback, False
 
 
-def analyze_uploaded_resume(uploaded_file, expected_job):
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
-        temp_file.write(uploaded_file.getbuffer())
-        temp_path = temp_file.name
+# ══════════════════════════════════════════════════════════════════
+# FULL PIPELINE
+# ══════════════════════════════════════════════════════════════════
 
+def run_analysis(file_storage, expected_job: str) -> dict:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+        file_storage.save(tmp.name)
+        tmp_path = tmp.name
     try:
-        text = extract_resume_text(temp_path)
+        text = extract_resume_text(tmp_path)
     finally:
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
 
-    skills = extract_skills(text)
-    score = calculate_resume_score(skills)
-    recommended_job = recommend_job(skills)
-    gap_analysis = analyze_expected_job(skills, expected_job)
-    guidance, llm_enabled, updated_gap_analysis = request_free_llm_guidance(
-        expected_job,
-        recommended_job,
-        skills,
-        gap_analysis,
-    )
+    skills      = extract_skills(text)
+    score       = calculate_resume_score(skills, expected_job)
+    recommended = recommend_job(skills)
+    gap         = analyze_expected_job(skills, expected_job)
+    guidance, llm_enabled = request_ai_guidance(expected_job, recommended, skills, gap)
 
     return {
-        "skills": skills,
-        "score": score,
-        "recommended_job": recommended_job,
-        "gap_analysis": updated_gap_analysis,
-        "guidance": guidance,
-        "llm_enabled": llm_enabled,
+        "skills":          skills,
+        "score":           score,
+        "recommended_job": recommended,
+        "gap_analysis":    gap,
+        "guidance":        guidance,
+        "llm_enabled":     llm_enabled,
     }
 
 
-# --- MAIN UI LAYOUT ---
+# ══════════════════════════════════════════════════════════════════
+# FLASK APP
+# ══════════════════════════════════════════════════════════════════
 
-st.markdown('<div class="gradient-title">🎯 AI Job & Skill Gap Analyzer</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle-text">Upload your PDF resume, choose your expected role, and get a polished report with detected skills, role match percentage, missing skills, and AI-guided interview prep.</div>', unsafe_allow_html=True)
+app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB
 
-with st.sidebar:
-    st.header("📄 Upload & Setup")
-    ollama_status = check_ollama_status()
-    
-    # Allow custom job input or predefined selection
-    job_options = list(job_skill_map.keys()) + ["Other (Type your own)"]
-    selected_job = st.selectbox("Select Expected Job Role", job_options)
-    
-    if selected_job == "Other (Type your own)":
-        expected_job = st.text_input("Enter your target job role:")
-    else:
-        expected_job = selected_job
 
-    uploaded_file = st.file_uploader("Upload Resume (PDF)", type=["pdf"])
-    st.markdown("---")
-    if ollama_status["available"]:
-        st.success(f"Ollama ready: {ollama_status['model']}")
-    else:
-        st.warning("Ollama is not fully ready. Built-in guidance will be used if generation fails.")
-        if ollama_status["error"]:
-            st.caption(ollama_status["error"])
+@app.route("/")
+def index():
+    return render_template("index.html", jobs=list(job_skill_map.keys()))
 
-    st.caption("Free LLM mode uses a local Ollama server if available. If not, the app still shows built-in guidance.")
 
-if uploaded_file and expected_job:
-    with st.spinner("Analyzing your resume and fetching AI guidance..."):
-        result = analyze_uploaded_resume(uploaded_file, expected_job)
+@app.route("/analyze", methods=["POST"])
+def analyze():
+    resume_file = request.files.get("resume")
+    if not resume_file or resume_file.filename == "":
+        return redirect(url_for("index"))
 
-    gap_analysis = result["gap_analysis"]
+    if not resume_file.filename.lower().endswith(".pdf"):
+        return render_template(
+            "index.html",
+            jobs=list(job_skill_map.keys()),
+            error="Only PDF files are supported.",
+        )
+
+    expected_job = request.form.get("expected_job", "").strip()
+    if not expected_job:
+        return redirect(url_for("index"))
+
+    try:
+        result = run_analysis(resume_file, expected_job)
+    except Exception as exc:
+        return render_template(
+            "index.html",
+            jobs=list(job_skill_map.keys()),
+            error=f"Analysis failed: {exc}",
+        )
+
+    gap      = result["gap_analysis"]
     guidance = result["guidance"]
+    score    = result["score"]
 
-    st.success("✅ Analysis Complete!")
+    if score >= 80:
+        score_label = ("Excellent", "score-excellent")
+    elif score >= 60:
+        score_label = ("Good", "score-good")
+    elif score >= 40:
+        score_label = ("Fair", "score-fair")
+    else:
+        score_label = ("Needs Work", "score-weak")
 
-    # Top Dashboard Metrics
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.markdown(f"""
-        <div class="colorful-card card-score">
-            <div class="card-label">Overall Resume Score</div>
-            <div class="card-value">{result['score']}/100</div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-    with col2:
-        st.markdown(f"""
-        <div class="colorful-card card-match">
-            <div class="card-label">Target Match</div>
-            <div class="card-value">{gap_analysis['match_score']}%</div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-    with col3:
-        # Scale down text slightly for longer job titles
-        st.markdown(f"""
-        <div class="colorful-card card-job">
-            <div class="card-label">Best Matched Role</div>
-            <div class="card-value" style="font-size: 2.2rem; padding-top: 5px;">{result["recommended_job"]}</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    st.markdown("<br>", unsafe_allow_html=True)
-    st.progress(gap_analysis['match_score'] / 100.0, text=f"Match Progress: {gap_analysis['match_score']}%")
-    st.markdown("<hr>", unsafe_allow_html=True)
+    match_score = gap["match_score"]
+    if match_score >= 80:
+        match_label = ("Strong Match", "match-strong")
+    elif match_score >= 50:
+        match_label = ("Partial Match", "match-partial")
+    else:
+        match_label = ("Low Match", "match-low")
 
-    # Use Tabs for a cleaner layout
-    tab1, tab2, tab3 = st.tabs(["📊 Skill Analysis", "🎯 Role Match", "💡 AI Career Guidance"])
+    return render_template(
+        "result.html",
+        expected_job    = expected_job,
+        recommended_job = result["recommended_job"],
+        score           = score,
+        score_label     = score_label,
+        match_score     = match_score,
+        match_label     = match_label,
+        skills          = result["skills"],
+        matched_skills  = gap["matched_skills"],
+        missing_skills  = gap["missing_skills"],
+        guidance        = guidance,
+        llm_enabled     = result["llm_enabled"],
+    )
 
-    with tab1:
-        st.subheader("Detected Skills")
-        st.info(f"We found {len(result['skills'])} skills in your resume matching our database.")
-        st.markdown(render_chips(result["skills"], "chip-blue"), unsafe_allow_html=True)
 
-    with tab2:
-        st.subheader(f"Comparison: {expected_job}")
-        
-        col_match, col_miss = st.columns(2)
-        with col_match:
-            st.markdown("#### ✅ Matched Skills")
-            st.markdown(render_chips(gap_analysis["matched_skills"], "chip-green"), unsafe_allow_html=True)
-            
-        with col_miss:
-            st.markdown("#### ❌ Missing Skills")
-            st.markdown(render_chips(gap_analysis["missing_skills"], "chip-red"), unsafe_allow_html=True)
-
-    with tab3:
-        st.subheader("Career Guidance")
-        
-        llm_status_badge = "🟢 Live LLM" if result["llm_enabled"] else "🟡 Fallback Mode"
-        st.markdown(f"**Source:** `{guidance['source']}` ({llm_status_badge})")
-        st.write(guidance["summary"])
-        
-        if not result["llm_enabled"]:
-            st.warning("Ollama response was unavailable. Using built-in offline guidance.")
-            if guidance.get("error"):
-                st.caption(f"Reason: {guidance['error']}")
-
-        with st.expander("💪 Strengths", expanded=True):
-            for item in guidance["strengths"]:
-                st.markdown(f"- {item}")
-
-        with st.expander("📉 Skill Gaps", expanded=True):
-            for item in guidance["gaps"]:
-                st.markdown(f"- {item}")
-
-        with st.expander("🚀 Next Steps", expanded=True):
-            for item in guidance["next_steps"]:
-                st.markdown(f"- {item}")
-
-        st.markdown("### 🎙️ Interview Prep Answer")
-        st.info("Use this as a baseline for 'Why are you a good fit for this role?'")
-        st.markdown(f"> *\"{guidance['interview_answer']}\"*")
-
-else:
-    # Empty State
-    st.markdown("""
-        <div class="empty-state-box">
-            <div class="empty-icon">📄</div>
-            <div class="empty-title">Awaiting Resume Upload</div>
-            <div class="empty-desc">Please upload a PDF from the sidebar to begin the analysis.</div>
-        </div>
-    """, unsafe_allow_html=True)
+if __name__ == "__main__":
+    app.run(debug=True)
